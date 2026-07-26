@@ -78,6 +78,17 @@ function parsePairingFilename(filename: string): PairingChannel | null {
     : null;
 }
 
+function safeAccountKeyForLegacyMatch(accountId: string): string | null {
+  try {
+    return safeAccountKey(accountId);
+  } catch {
+    // Config/binding discovery can surface wildcard or otherwise non-addressable account ids.
+    // Those ids never owned a scoped legacy filename, so ignore them instead of aborting every
+    // doctor state migration while matching an unrelated valid file.
+    return null;
+  }
+}
+
 function parseAllowFromFilename(
   filename: string,
   knownChannelIds: readonly string[],
@@ -106,7 +117,7 @@ function parseAllowFromFilename(
     }
     const accountKey = stem.slice(channel.length + 1);
     const matchingAccountIds = (accountIds[channel] ?? []).filter(
-      (accountId) => safeAccountKey(accountId) === accountKey,
+      (accountId) => safeAccountKeyForLegacyMatch(accountId) === accountKey,
     );
     if (matchingAccountIds.length === 1 && matchingAccountIds[0]) {
       targets.push({ channel: channel as PairingChannel, accountId: matchingAccountIds[0] });
