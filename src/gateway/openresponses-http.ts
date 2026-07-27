@@ -825,6 +825,7 @@ export async function handleOpenResponsesHttpRequest(
               callId: functionCall.id,
               name: functionCall.name,
               arguments: functionCall.arguments,
+              status: "completed",
             }),
           );
         }
@@ -1254,6 +1255,7 @@ export async function handleOpenResponsesHttpRequest(
             callId: functionCall.id,
             name: functionCall.name,
             arguments: functionCall.arguments,
+            status: "in_progress",
           });
           writeSseEvent(res, {
             type: "response.output_item.added",
@@ -1272,7 +1274,7 @@ export async function handleOpenResponsesHttpRequest(
             output_index: nextStreamOutputIndex,
             item: completedFunctionCallItem,
           });
-          functionCallItems.push(functionCallItem);
+          functionCallItems.push(completedFunctionCallItem);
           nextStreamOutputIndex += 1;
         }
 

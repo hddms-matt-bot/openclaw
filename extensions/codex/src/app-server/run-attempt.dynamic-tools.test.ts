@@ -58,6 +58,71 @@ function activeDiagnosticToolKeys(events: DiagnosticEventPayload[]): Set<string>
 setupRunAttemptTestHooks();
 
 describe("runCodexAppServerAttempt dynamic tools", () => {
+  it("delegates caller-owned tools without executing them or waiting for assistant prose", async () => {
+    const harness = createStartedThreadHarness();
+    const params = createParams(
+      path.join(tempDir, "client-tool-session.jsonl"),
+      path.join(tempDir, "client-tool-workspace"),
+    );
+    params.clientTools = [
+      {
+        type: "function",
+        function: {
+          name: "submit_probe_result",
+          description: "Submit the structured probe result.",
+          parameters: {
+            type: "object",
+            properties: {
+              ok: { type: "boolean" },
+            },
+            required: ["ok"],
+            additionalProperties: false,
+          },
+          strict: true,
+        },
+      },
+    ];
+
+    const run = runCodexAppServerAttempt(params);
+    await harness.waitForMethod("thread/start");
+    const threadStart = harness.requests.find((entry) => entry.method === "thread/start");
+    expect(threadStart?.params).toMatchObject({
+      dynamicTools: expect.arrayContaining([
+        expect.objectContaining({
+          type: "function",
+          name: "submit_probe_result",
+          inputSchema: expect.objectContaining({
+            type: "object",
+            required: ["ok"],
+          }),
+        }),
+      ]),
+    });
+
+    const response = await harness.handleServerRequest({
+      id: "request-client-tool",
+      method: "item/tool/call",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        callId: "call-client-tool",
+        namespace: null,
+        tool: "submit_probe_result",
+        arguments: { ok: true },
+      },
+    });
+
+    expect(response).toEqual({
+      contentItems: [{ type: "inputText", text: "Client tool call delegated to the caller." }],
+      success: true,
+    });
+    await harness.waitForMethod("turn/interrupt");
+    await expect(run).resolves.toMatchObject({
+      assistantTexts: [],
+      clientToolCalls: [{ name: "submit_probe_result", params: { ok: true } }],
+    });
+  });
+
   it.each(["cancelled", "timed_out"] as const)(
     "preserves the %s terminal reason in trusted tool diagnostics",
     async (terminalReason) => {

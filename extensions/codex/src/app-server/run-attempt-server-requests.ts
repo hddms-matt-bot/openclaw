@@ -45,6 +45,7 @@ export function createCodexAttemptServerRequestController(
   const { params, computerUseConfig, runAbortController, appServer, sessionAgentId } = connection;
   const {
     toolBridge,
+    clientToolDelegation,
     toolOutcomeOrdinals,
     suppressedDynamicToolOutcomeOrdinals,
     allocateCodexToolOutcomeOrdinal,
@@ -135,6 +136,28 @@ export function createCodexAttemptServerRequestController(
       const call = readCodexDynamicToolCallParams(request.params);
       if (!call || call.threadId !== resourceState.thread.threadId || call.turnId !== turnId) {
         return undefined;
+      }
+      if (clientToolDelegation.matches(call)) {
+        armCompletionWatchOnResponse = true;
+        markCurrentTurnRequestProgress();
+        state.turnCrossedToolHandoff = true;
+        clientToolDelegation.record(call);
+        const response = {
+          contentItems: [
+            {
+              type: "inputText" as const,
+              text: "Client tool call delegated to the caller.",
+            },
+          ],
+          success: true,
+          terminate: true,
+        };
+        scheduleTurnReleaseAfterTerminalDynamicTool({
+          call,
+          response,
+          durationMs: 0,
+        });
+        return toCodexDynamicToolProtocolResponse(response) as JsonValue;
       }
       const replayedExecution = openClawDynamicToolExecutions.get(call);
       if (replayedExecution) {

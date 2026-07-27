@@ -82,7 +82,7 @@ export async function finalizeCodexAttempt(
     attemptStartedAt,
     startupAuthProfileId,
   } = connection;
-  const { toolBridge, toolState } = attemptTools;
+  const { toolBridge, toolState, clientToolDelegation } = attemptTools;
   const {
     state,
     completion,
@@ -145,6 +145,7 @@ export async function finalizeCodexAttempt(
   }
   const result = activeProjector.buildResult(toolBridge.telemetry, {
     yieldDetected: toolState.yieldDetected,
+    clientToolCalls: clientToolDelegation.snapshot(),
   });
   const projectedTerminal = attemptTerminal.project(result.terminal);
   const effectiveTimedOut = state.timedOut && !recoveredTurnWatchTimeout;

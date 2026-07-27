@@ -4,6 +4,7 @@ import {
   materializeRequesterScopedMcpToolsForHarnessRun,
   resolveAgentDir,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { createCodexClientToolDelegation } from "./client-tool-delegation.js";
 import {
   buildDynamicTools,
   formatCodexDynamicToolBuildStageSummary,
@@ -247,6 +248,14 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
       allocateToolOutcomeOrdinal: allocateCodexToolOutcomeOrdinal,
     },
   });
+  const clientToolDelegation = createCodexClientToolDelegation({
+    clientTools: runtimeParams.clientTools,
+    reservedSpecs: toolBridge.specs,
+  });
+  if (clientToolDelegation.specs.length > 0) {
+    toolBridge.availableSpecs = [...toolBridge.availableSpecs, ...clientToolDelegation.specs];
+    toolBridge.specs = [...toolBridge.specs, ...clientToolDelegation.specs];
+  }
   return {
     tools: toolsWithScopedMcp,
     registeredTools: registeredWithScopedMcp,
@@ -254,6 +263,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     dynamicToolParams,
     computerContextEpoch,
     toolBridge,
+    clientToolDelegation,
     toolState,
     toolOutcomeOrdinals,
     suppressedDynamicToolOutcomeOrdinals,
