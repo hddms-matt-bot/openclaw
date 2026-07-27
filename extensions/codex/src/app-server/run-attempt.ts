@@ -121,6 +121,7 @@ import {
   resolveCodexAppServerAuthProfileId,
   resolveCodexAppServerAuthProfileIdForAgent,
 } from "./auth-bridge.js";
+import { createCodexClientToolDelegation } from "./client-tool-delegation.js";
 import {
   CodexAppServerRpcError,
   isCodexAppServerApprovalRequest,
@@ -910,6 +911,14 @@ export async function runCodexAppServerAttempt(
       allocateToolOutcomeOrdinal: allocateCodexToolOutcomeOrdinal,
     },
   });
+  const clientToolDelegation = createCodexClientToolDelegation({
+    clientTools: params.clientTools,
+    reservedSpecs: toolBridge.specs,
+  });
+  if (clientToolDelegation.specs.length > 0) {
+    toolBridge.availableSpecs = [...toolBridge.availableSpecs, ...clientToolDelegation.specs];
+    toolBridge.specs = [...toolBridge.specs, ...clientToolDelegation.specs];
+  }
   const hadSessionFile = await pathExists(activeSessionFile);
   const activeTranscriptTarget = {
     agentId: sessionAgentId,
@@ -2396,6 +2405,28 @@ export async function runCodexAppServerAttempt(
       if (!call || call.threadId !== thread.threadId || call.turnId !== turnId) {
         return undefined;
       }
+      if (clientToolDelegation.matches(call)) {
+        armCompletionWatchOnResponse = true;
+        markCurrentTurnRequestProgress();
+        turnCrossedToolHandoff = true;
+        clientToolDelegation.record(call);
+        const response = {
+          contentItems: [
+            {
+              type: "inputText" as const,
+              text: "Client tool call delegated to the caller.",
+            },
+          ],
+          success: true,
+          terminate: true,
+        };
+        scheduleTurnReleaseAfterTerminalDynamicTool({
+          call,
+          response,
+          durationMs: 0,
+        });
+        return toCodexDynamicToolProtocolResponse(response) as JsonValue;
+      }
       const toolCallOrdinal = allocateCodexToolOutcomeOrdinal?.(call.callId);
       armCompletionWatchOnResponse = true;
       markCurrentTurnRequestProgress();
@@ -3255,7 +3286,10 @@ export async function runCodexAppServerAttempt(
         timeoutMs: turnWatchTimeoutMs,
       });
     }
-    const result = activeProjector.buildResult(toolBridge.telemetry, { yieldDetected });
+    const result = activeProjector.buildResult(toolBridge.telemetry, {
+      yieldDetected,
+      clientToolCalls: clientToolDelegation.snapshot(),
+    });
     const effectiveTimedOut = timedOut && !recoveredTurnWatchTimeout;
     const effectiveTurnCompletionIdleTimedOut =
       turnCompletionIdleTimedOut && !recoveredTurnWatchTimeout;
