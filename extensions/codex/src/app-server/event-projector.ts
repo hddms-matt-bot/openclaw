@@ -729,7 +729,10 @@ export class CodexAppServerEventProjector {
 
   buildResult(
     toolTelemetry: CodexAppServerToolTelemetry,
-    options?: { yieldDetected?: boolean },
+    options?: {
+      yieldDetected?: boolean;
+      clientToolCalls?: Array<{ name: string; params: Record<string, unknown> }>;
+    },
   ): EmbeddedRunAttemptResult {
     // Result construction runs after the notification queue drains. Close any
     // tool lacking a terminal item so audit consumers never retain an open action.
@@ -855,6 +858,7 @@ export class CodexAppServerEventProjector {
           : {}),
       },
       yieldDetected: options?.yieldDetected || false,
+      ...(options?.clientToolCalls?.length ? { clientToolCalls: options.clientToolCalls } : {}),
       didSendDeterministicApprovalPrompt: this.guardianReviewCount > 0 ? false : undefined,
     };
   }
@@ -2537,7 +2541,6 @@ function readNonNegativeInteger(record: JsonObject, key: string): number | undef
   const value = readNumber(record, key);
   return value !== undefined && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
-
 
 function readCodexErrorNotificationMessage(record: JsonObject): string | undefined {
   const error = record.error;
