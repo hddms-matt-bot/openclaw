@@ -811,6 +811,52 @@ describe("maybeMigrateAuthProfileJsonStoresToSqlite", () => {
     expectNoMigratedArchive(authPath);
   });
 
+  it("archives a secondary-agent OAuth profile inherited from shared main", async () => {
+    const state = await makeTestState();
+    const secondaryAgentDir = state.agentDir("secondary");
+    const inheritedOAuth = {
+      type: "oauth" as const,
+      provider: "openai",
+      access: "fake-access-token",
+      refresh: "fake-refresh-token",
+      expires: 1_900_000_000_000,
+      accountId: "fake-account",
+    };
+    saveAuthProfileStore(
+      {
+        version: 1,
+        profiles: { "openai:default": inheritedOAuth },
+      },
+      state.agentDir(),
+      { filterExternalAuthProfiles: false, syncExternalCli: false },
+    );
+    const authPath = await writeLegacyAuthProfilesJson(
+      state,
+      {
+        version: 1,
+        profiles: { "openai:default": inheritedOAuth },
+      },
+      "secondary",
+    );
+
+    const result = await maybeMigrateAuthProfileJsonStoresToSqlite({
+      cfg: {
+        agents: { list: [{ id: "secondary", agentDir: secondaryAgentDir }] },
+      },
+      prompter: makePrompter(true),
+      env: state.env,
+      now: () => 465,
+    });
+
+    expect(result.warnings).toStrictEqual([]);
+    expect(loadPersistedAuthProfileStore(secondaryAgentDir)?.profiles).toStrictEqual({});
+    expect(loadPersistedAuthProfileStore(state.agentDir())?.profiles["openai:default"]).toEqual(
+      inheritedOAuth,
+    );
+    expect(fs.existsSync(authPath)).toBe(false);
+    expectMigratedArchive(authPath);
+  });
+
   it("keeps legacy JSON when the SQLite target changes before the migration transaction", async () => {
     const state = await makeTestState();
     const authPath = await writeLegacyAuthProfilesJson(state, {

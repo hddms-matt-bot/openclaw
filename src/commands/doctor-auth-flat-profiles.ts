@@ -31,6 +31,7 @@ import { coerceAuthProfileState } from "../agents/auth-profiles/state.js";
 import {
   clearRuntimeAuthProfileStoreSnapshots,
   saveAuthProfileStore,
+  shouldUseMainOwnerForLocalOAuthCredential,
 } from "../agents/auth-profiles/store.js";
 import type {
   AuthProfileCredential,
@@ -612,10 +613,12 @@ function mergeImportedAuthProfileState(params: {
 function formatMissingAuthProfileSqliteVerification(params: {
   expected: AuthProfileStore;
   importedProfileIds: ReadonlySet<string>;
+  inheritedProfileIds?: ReadonlySet<string>;
   loaded: AuthProfileStore | null;
 }): string | null {
   const missingProfileIds = [...params.importedProfileIds].filter(
-    (profileId) => !params.loaded?.profiles[profileId],
+    (profileId) =>
+      !params.loaded?.profiles[profileId] && !params.inheritedProfileIds?.has(profileId),
   );
   const missingStateFields: string[] = [];
   for (const [provider, profileIds] of Object.entries(params.expected.order ?? {})) {
@@ -647,6 +650,39 @@ function formatMissingAuthProfileSqliteVerification(params: {
     parts.push(`auth state field(s): ${missingStateFields.toSorted().join(", ")}`);
   }
   return parts.length > 0 ? parts.join("; ") : null;
+}
+
+function collectVerifiedInheritedMainOAuthProfileIds(params: {
+  agentDir: string | undefined;
+  env: NodeJS.ProcessEnv;
+  importedProfileIds: ReadonlySet<string>;
+  expected: AuthProfileStore;
+  loaded: AuthProfileStore | null;
+}): Set<string> {
+  const inheritedProfileIds = new Set<string>();
+  const mainAgentDir = resolveSharedMainAuthAgentDir(params.env);
+  if (!params.agentDir || path.resolve(params.agentDir) === path.resolve(mainAgentDir)) {
+    return inheritedProfileIds;
+  }
+  const mainStore = loadPersistedAuthProfileStore(mainAgentDir);
+  for (const profileId of params.importedProfileIds) {
+    if (params.loaded?.profiles[profileId]) {
+      continue;
+    }
+    const imported = params.expected.profiles[profileId];
+    const main = mainStore?.profiles[profileId];
+    if (
+      imported?.type === "oauth" &&
+      main?.type === "oauth" &&
+      (isDeepStrictEqual(main, imported) ||
+        shouldUseMainOwnerForLocalOAuthCredential({ local: imported, main }))
+    ) {
+      // Saving intentionally deduplicates inherited OAuth credentials into the
+      // shared-main owner. Verify that owner before archiving the legacy copy.
+      inheritedProfileIds.add(profileId);
+    }
+  }
+  return inheritedProfileIds;
 }
 
 function filterRawAuthProfileState(
@@ -1310,13 +1346,21 @@ export async function maybeMigrateAuthProfileJsonStoresToSqlite(params: {
               database,
             );
             const loaded = loadMigratedStore(candidate.agentDir, { database });
+            const inheritedProfileIds = collectVerifiedInheritedMainOAuthProfileIds({
+              agentDir: candidate.agentDir,
+              env,
+              importedProfileIds,
+              expected: next,
+              loaded,
+            });
             const verificationFailure = formatMissingAuthProfileSqliteVerification({
               expected: next,
               importedProfileIds,
+              inheritedProfileIds,
               loaded,
             });
             const mismatchedCredential = [...importedProfileIds].some((profileId) => {
-              if (existingProfileIds.has(profileId)) {
+              if (existingProfileIds.has(profileId) || inheritedProfileIds.has(profileId)) {
                 return false;
               }
               return !isDeepStrictEqual(loaded?.profiles[profileId], next.profiles[profileId]);

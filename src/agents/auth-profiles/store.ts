@@ -268,7 +268,7 @@ function isInheritedMainOAuthCredential(params: {
   );
 }
 
-function shouldUseMainOwnerForLocalOAuthCredential(params: {
+export function shouldUseMainOwnerForLocalOAuthCredential(params: {
   local: AuthProfileStore["profiles"][string];
   main: AuthProfileStore["profiles"][string] | undefined;
 }): boolean {
