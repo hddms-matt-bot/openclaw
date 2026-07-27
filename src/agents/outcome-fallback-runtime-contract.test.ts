@@ -103,6 +103,47 @@ describe("Outcome/fallback runtime contract - embedded runtime fallback classifi
     expect(result.attempts[0]?.code).toBe("empty_result");
   });
 
+  it("keeps a terminal client tool call on the primary candidate", async () => {
+    const primary = createContractRunResult({
+      meta: {
+        durationMs: 1,
+        stopReason: "tool_calls",
+        pendingToolCalls: [
+          {
+            id: "call_1",
+            name: "submit_hddms_turn_result",
+            arguments: '{"reply":{"text":"Welcome"}}',
+          },
+        ],
+        agentHarnessResultClassification: "empty",
+      },
+    });
+    const run = vi.fn().mockResolvedValue(primary);
+
+    const result = await runWithModelFallback<ReturnType<typeof createContractRunResult>>({
+      cfg: undefined,
+      provider: OUTCOME_FALLBACK_RUNTIME_CONTRACT.primaryProvider,
+      model: OUTCOME_FALLBACK_RUNTIME_CONTRACT.primaryModel,
+      fallbacksOverride: contractFallbackOverride,
+      run,
+      classifyResult: ({ provider, model, result: resultValue }) =>
+        classifyEmbeddedAgentRunResultForModelFallback({
+          provider,
+          model,
+          result: resultValue,
+        }),
+      mergeExhaustedResult: mergeEmbeddedAgentRunResultForModelFallbackExhaustion,
+      skipAuthProfileRuntime: true,
+    });
+
+    expect(result.outcome).toBe("completed");
+    expect(result.result).toBe(primary);
+    expect(result.provider).toBe(OUTCOME_FALLBACK_RUNTIME_CONTRACT.primaryProvider);
+    expect(result.model).toBe(OUTCOME_FALLBACK_RUNTIME_CONTRACT.primaryModel);
+    expect(result.attempts).toStrictEqual([]);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves a tool-authored summary when fallback candidates are exhausted", async () => {
     const terminalSummary =
       "Web fetch completed.\nOrigin: https://example.com\nStatus: 200\n\n" +

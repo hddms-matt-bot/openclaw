@@ -207,6 +207,14 @@ export function classifyEmbeddedAgentRunResultForModelFallback(params: {
     // bypass a policy decision rather than recover a malformed model result.
     return null;
   }
+  if (
+    params.result.meta.stopReason === "tool_calls" &&
+    (params.result.meta.pendingToolCalls?.length ?? 0) > 0
+  ) {
+    // Client tool calls are successful terminal work even when the harness intentionally
+    // returns no assistant prose. Falling back would duplicate or replace the accepted call.
+    return null;
+  }
   const payloads = params.result.payloads ?? [];
   const genericExternalFailureClassification = classifyGenericExternalRunFailurePayload({
     provider: params.provider,

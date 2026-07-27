@@ -4,6 +4,29 @@ import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../../auto-reply/reply/agent-
 import { classifyEmbeddedAgentRunResultForModelFallback } from "./result-fallback-classifier.js";
 
 describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
+  it("does not fallback after a terminal client tool call", () => {
+    expect(
+      classifyEmbeddedAgentRunResultForModelFallback({
+        provider: "openai",
+        model: "gpt-5.6-sol",
+        result: {
+          meta: {
+            durationMs: 1,
+            stopReason: "tool_calls",
+            pendingToolCalls: [
+              {
+                id: "call_1",
+                name: "submit_hddms_turn_result",
+                arguments: '{"reply":{"text":"Welcome"}}',
+              },
+            ],
+            agentHarnessResultClassification: "empty",
+          },
+        },
+      }),
+    ).toBeNull();
+  });
+
   it("does not fallback when sessions_spawn accepted a child session", () => {
     // Accepted child sessions mean the turn made progress even if the parent did
     // not emit a normal assistant reply.

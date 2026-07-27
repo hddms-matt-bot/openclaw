@@ -1409,6 +1409,7 @@ describe("OpenResponses HTTP API (e2e)", () => {
     expect(json.status).toBe("incomplete");
     expect(json.output?.map((item) => item.type)).toEqual(["message", "function_call"]);
     expect(json.output?.[1]?.name).toBe("get_weather");
+    expect(json.output?.[1]?.status).toBe("completed");
     const opts = firstAgentOpts();
     expect((opts as { extraSystemPrompt?: string }).extraSystemPrompt ?? "").toContain(
       "You must call one of the available tools",
@@ -1787,6 +1788,11 @@ describe("OpenResponses HTTP API (e2e)", () => {
       "call_2",
       "call_3",
     ]);
+    expect(json.output?.slice(1).map((item) => item.status)).toEqual([
+      "completed",
+      "completed",
+      "completed",
+    ]);
     expect(json.output?.[1]?.arguments).toBe('{"nodes":["a","b"]}');
     await ensureResponseConsumed(res);
   });
@@ -1833,7 +1839,13 @@ describe("OpenResponses HTTP API (e2e)", () => {
 
     type FunctionCallEvent = {
       output_index: number;
-      item: { type: string; name?: string; call_id?: string; arguments?: string };
+      item: {
+        type: string;
+        name?: string;
+        call_id?: string;
+        arguments?: string;
+        status?: string;
+      };
     };
     const addedFunctionCalls = events
       .filter((e) => e.event === "response.output_item.added")
@@ -1850,12 +1862,22 @@ describe("OpenResponses HTTP API (e2e)", () => {
       "call_2",
       "call_3",
     ]);
+    expect(addedFunctionCalls.map((evt) => evt.item.status)).toEqual([
+      "in_progress",
+      "in_progress",
+      "in_progress",
+    ]);
 
     const doneFunctionCalls = events
       .filter((e) => e.event === "response.output_item.done")
       .map((e) => JSON.parse(e.data) as FunctionCallEvent)
       .filter((evt) => evt.item.type === "function_call");
     expect(doneFunctionCalls.map((evt) => evt.output_index)).toEqual([1, 2, 3]);
+    expect(doneFunctionCalls.map((evt) => evt.item.status)).toEqual([
+      "completed",
+      "completed",
+      "completed",
+    ]);
 
     const completed = findSseEvent(events, "response.completed");
     const response = (
@@ -1874,6 +1896,11 @@ describe("OpenResponses HTTP API (e2e)", () => {
       "create_graph",
       "activate_graph",
       "get_status",
+    ]);
+    expect(response?.output?.slice(1).map((item) => item.status)).toEqual([
+      "completed",
+      "completed",
+      "completed",
     ]);
     expect(events.map((event) => event.data)).toContain("[DONE]");
   });
