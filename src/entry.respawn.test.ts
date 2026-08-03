@@ -37,6 +37,18 @@ describe("buildCliRespawnPlan", () => {
     ).toBeNull();
   });
 
+  it("keeps POSIX native hook relays on the timeout-owned process", () => {
+    expect(
+      buildCliRespawnPlan({
+        argv: ["node", "openclaw", "hooks", "relay", "--relay-id", "relay-1"],
+        env: {},
+        execArgv: [],
+        autoNodeExtraCaCerts: "/etc/ssl/certs/ca-certificates.crt",
+        platform: "linux",
+      }),
+    ).toBeNull();
+  });
+
   it("adds NODE_EXTRA_CA_CERTS and warning suppression in one respawn", () => {
     const plan = buildCliRespawnPlan({
       argv: ["node", "openclaw", "status"],
@@ -258,8 +270,7 @@ describe("runCliRespawnPlan", () => {
       {
         stdio: "inherit",
         env: { OPENCLAW_NODE_OPTIONS_READY: "1" },
-        detached:
-          process.platform !== "win32" && !(process.stdin.isTTY || process.stdout.isTTY),
+        detached: process.platform !== "win32" && !(process.stdin.isTTY || process.stdout.isTTY),
       },
     );
     const [bridgeChild, bridgeOptions] = requireFirstMockCall(
