@@ -3,6 +3,7 @@ import { STATE_DIR } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   emitTrustedDiagnosticEventWithPrivateData,
+  onInternalDiagnosticEvent,
   onTrustedInternalDiagnosticEvent,
 } from "../infra/diagnostic-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -35,6 +36,10 @@ function createServiceContext(params: {
   const grantsInternalDiagnostics =
     isDiagnosticsExporter &&
     (params.service?.origin === "bundled" || params.service?.trustedOfficialInstall === true);
+  const grantsHddmsMetadataDiagnostics =
+    params.service?.pluginId === "hddms-performance" &&
+    params.service?.service.id === "hddms-performance" &&
+    params.service?.origin === "global";
 
   return {
     config: params.config,
@@ -54,6 +59,13 @@ function createServiceContext(params: {
           internalDiagnostics: {
             emit: emitTrustedDiagnosticEventWithPrivateData,
             onEvent: onTrustedInternalDiagnosticEvent,
+          },
+        }
+      : {}),
+    ...(grantsHddmsMetadataDiagnostics
+      ? {
+          internalDiagnosticEvents: {
+            onEvent: onInternalDiagnosticEvent,
           },
         }
       : {}),

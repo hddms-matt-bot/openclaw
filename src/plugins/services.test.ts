@@ -420,4 +420,38 @@ describe("startPluginServices", () => {
 
     expect(spoofedContexts[0]?.internalDiagnostics).toBeUndefined();
   });
+
+  it("grants metadata-only internal events only to the managed HDDMS service", async () => {
+    const hddmsContexts: OpenClawPluginServiceContext[] = [];
+    await startPluginServices({
+      registry: createRegistry(
+        [createTrackingService("hddms-performance", { contexts: hddmsContexts })],
+        "hddms-performance",
+        "global",
+      ),
+      config: createServiceConfig(),
+    });
+
+    expect(hddmsContexts[0]?.internalDiagnosticEvents?.onEvent).toBeTypeOf("function");
+    expect(hddmsContexts[0]?.internalDiagnostics).toBeUndefined();
+
+    for (const [pluginId, serviceId, origin] of [
+      ["hddms-performance", "hddms-performance", "workspace"],
+      ["not-hddms-performance", "hddms-performance", "global"],
+      ["hddms-performance", "not-hddms-performance", "global"],
+      ["other-plugin", "other-plugin", "global"],
+    ] as const) {
+      const contexts: OpenClawPluginServiceContext[] = [];
+      await startPluginServices({
+        registry: createRegistry(
+          [createTrackingService(serviceId, { contexts })],
+          pluginId,
+          origin,
+        ),
+        config: createServiceConfig(),
+      });
+
+      expect(contexts[0]?.internalDiagnosticEvents).toBeUndefined();
+    }
+  });
 });

@@ -2367,6 +2367,12 @@ export type OpenClawPluginServiceContext = {
       ) => void,
     ) => () => void;
   };
+  /** Metadata-only internal events granted to narrowly trusted local consumers. */
+  internalDiagnosticEvents?: {
+    onEvent: (
+      listener: (event: DiagnosticEventPayload, metadata: DiagnosticEventMetadata) => void,
+    ) => () => void;
+  };
 };
 
 /** Background service registered by a plugin during `register(api)`. */
