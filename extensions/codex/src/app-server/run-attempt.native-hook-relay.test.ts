@@ -14,8 +14,10 @@ import { describe, expect, it, vi } from "vitest";
 import * as approvalBridge from "./approval-bridge.js";
 import { CodexAppServerRpcError } from "./client.js";
 import {
+  createCodexRuntimePlanFixture,
   createParams,
   createResumeHarness,
+  createRuntimeDynamicTool,
   createStartedThreadHarness,
   extractGenerationFromThreadRequest,
   extractRelayIdFromThreadRequest,
@@ -86,6 +88,116 @@ describe("runCodexAppServerAttempt native hook relay", () => {
     expect(preToolUseState?.trusted_hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     const relayId = extractRelayIdFromThreadRequest(startRequest?.params);
     expect(nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relayId)).toBeDefined();
+    testing.flushPendingCodexNativeHookRelayUnregistersForTests();
+    expect(nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relayId)).toBeUndefined();
+  });
+
+  it("retains the native hook relay until yielded native children settle", async () => {
+    testing.setOpenClawCodingToolsFactoryForTests((options) => {
+      const sessionsYield = createRuntimeDynamicTool("sessions_yield");
+      return [
+        {
+          ...sessionsYield,
+          execute: vi.fn(async () => {
+            options?.onYield?.("Waiting for native child");
+            return {
+              content: [{ type: "text" as const, text: "Yielded to native child" }],
+              details: {},
+            };
+          }),
+        },
+      ];
+    });
+    const sessionFile = path.join(tempDir, "yielded-child-session.jsonl");
+    const workspaceDir = path.join(tempDir, "yielded-child-workspace");
+    const params = createParams(sessionFile, workspaceDir);
+    params.cleanupBundleMcpOnRunEnd = true;
+    params.disableTools = false;
+    params.runtimePlan = createCodexRuntimePlanFixture();
+    const harness = createStartedThreadHarness();
+
+    const run = runCodexAppServerAttempt(params, {
+      nativeHookRelay: { enabled: true, events: ["pre_tool_use"] },
+    });
+    await harness.waitForMethod("turn/start");
+    const startRequest = harness.requests.find((request) => request.method === "thread/start");
+    const relayId = extractRelayIdFromThreadRequest(startRequest?.params);
+    await harness.notify({
+      method: "thread/started",
+      params: {
+        thread: {
+          id: "child-thread",
+          source: {
+            subAgent: {
+              thread_spawn: {
+                parent_thread_id: "thread-1",
+                depth: 1,
+                agent_path: "child-thread",
+              },
+            },
+          },
+        },
+      },
+    });
+    await expect(
+      harness.handleServerRequest({
+        id: "request-sessions-yield",
+        method: "item/tool/call",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          callId: "yield-call",
+          namespace: null,
+          tool: "sessions_yield",
+          arguments: {},
+        },
+      }),
+    ).resolves.toMatchObject({ success: true });
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+
+    // Flushing the normal post-turn grace simulates a child that outlives the
+    // default 15-second unregister window. Its inherited hook must still work.
+    testing.flushPendingCodexNativeHookRelayUnregistersForTests();
+    expect(nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relayId)).toBeDefined();
+    await expect(
+      invokeNativeHookRelay({
+        provider: "codex",
+        relayId,
+        event: "pre_tool_use",
+        rawPayload: {
+          hook_event_name: "PreToolUse",
+          agent_id: "child-thread",
+          tool_name: "Bash",
+          tool_input: { command: "pnpm test:extension codex" },
+        },
+      }),
+    ).resolves.toMatchObject({ exitCode: 0 });
+
+    await harness.notify({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "thread-1",
+        item: {
+          type: "message",
+          role: "assistant",
+          phase: "commentary",
+          content: [
+            {
+              type: "output_text",
+              text: JSON.stringify({
+                author: "child-thread",
+                recipient: "/root",
+                other_recipients: [],
+                content:
+                  '<subagent_notification>{"agent_path":"child-thread","status":{"completed":"done"}}</subagent_notification>',
+                trigger_turn: false,
+              }),
+            },
+          ],
+        },
+      },
+    });
     testing.flushPendingCodexNativeHookRelayUnregistersForTests();
     expect(nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relayId)).toBeUndefined();
   });

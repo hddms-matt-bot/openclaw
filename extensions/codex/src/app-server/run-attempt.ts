@@ -3653,19 +3653,36 @@ export async function runCodexAppServerAttempt(
     if (!timedOut && !runAbortController.signal.aborted) {
       await steeringQueueRef.current?.flushPending();
     }
+    const releaseNativeChildOwnedResources = async () => {
+      // Keep the parent subscription alive until native child delivery;
+      // unsubscribing first drops the completion signal that settles cleanup.
+      await unsubscribeCodexThreadBestEffort(client, {
+        threadId: thread.threadId,
+        timeoutMs: CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS,
+      });
+      await releaseSharedClientLeaseAndRetireOneShotClient();
+      if (nativeHookRelay) {
+        if (shouldDelayNativeHookRelayUnregister) {
+          // Child hook subprocesses can still be in flight when the final
+          // native child settles, so preserve the existing timeout grace.
+          scheduleCodexNativeHookRelayUnregister({
+            relay: nativeHookRelay,
+            hookTimeoutSec: options.nativeHookRelay?.hookTimeoutSec,
+          });
+        } else {
+          nativeHookRelay.unregister();
+        }
+      }
+      await releaseSandboxExecEnvironment();
+    };
     const yieldedOneShotCleanupDeferred =
       !timedOut &&
       params.cleanupBundleMcpOnRunEnd === true &&
       yieldDetected &&
-      nativeSubagentMonitorRef.current?.deferUntilParentSettles(thread.threadId, async () => {
-        // Keep the parent subscription alive until native child delivery;
-        // unsubscribing first drops the completion signal that settles cleanup.
-        await unsubscribeCodexThreadBestEffort(client, {
-          threadId: thread.threadId,
-          timeoutMs: CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS,
-        });
-        await releaseSharedClientLeaseAndRetireOneShotClient();
-      });
+      nativeSubagentMonitorRef.current?.deferUntilParentSettles(
+        thread.threadId,
+        releaseNativeChildOwnedResources,
+      );
     if (!timedOut && !yieldedOneShotCleanupDeferred) {
       await unsubscribeCodexThreadBestEffort(client, {
         threadId: thread.threadId,
@@ -3677,21 +3694,21 @@ export async function runCodexAppServerAttempt(
     releaseCurrentRoute();
     if (!yieldedOneShotCleanupDeferred) {
       await releaseSharedClientLeaseAndRetireOneShotClient();
-    }
-    if (nativeHookRelay) {
-      if (shouldDelayNativeHookRelayUnregister) {
-        // Codex hook subprocesses can outlive a completed app-server turn by a
-        // few seconds. Keep the relay available briefly so late
-        // nativeHook.invoke RPCs can still reach before_tool_call enforcement.
-        scheduleCodexNativeHookRelayUnregister({
-          relay: nativeHookRelay,
-          hookTimeoutSec: options.nativeHookRelay?.hookTimeoutSec,
-        });
-      } else {
-        nativeHookRelay.unregister();
+      if (nativeHookRelay) {
+        if (shouldDelayNativeHookRelayUnregister) {
+          // Codex hook subprocesses can outlive a completed app-server turn by a
+          // few seconds. Keep the relay available briefly so late
+          // nativeHook.invoke RPCs can still reach before_tool_call enforcement.
+          scheduleCodexNativeHookRelayUnregister({
+            relay: nativeHookRelay,
+            hookTimeoutSec: options.nativeHookRelay?.hookTimeoutSec,
+          });
+        } else {
+          nativeHookRelay.unregister();
+        }
       }
+      await releaseSandboxExecEnvironment();
     }
-    await releaseSandboxExecEnvironment();
     runAbortController.signal.removeEventListener("abort", abortListener);
     steeringQueueRef.current?.cancel();
     freezeRunTerminalOutcome();
