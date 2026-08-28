@@ -3675,14 +3675,14 @@ export async function runCodexAppServerAttempt(
       }
       await releaseSandboxExecEnvironment();
     };
-    const yieldedOneShotCleanupDeferred =
-      !timedOut &&
-      params.cleanupBundleMcpOnRunEnd === true &&
-      yieldDetected &&
-      nativeSubagentMonitorRef.current?.deferUntilParentSettles(
-        thread.threadId,
-        releaseNativeChildOwnedResources,
-      );
+    const yieldedOneShotCleanupDeferred = deferCodexYieldedOneShotCleanup({
+      timedOut,
+      cleanupBundleMcpOnRunEnd: params.cleanupBundleMcpOnRunEnd === true,
+      yieldDetected,
+      monitor: nativeSubagentMonitorRef.current,
+      parentThreadId: thread.threadId,
+      cleanup: releaseNativeChildOwnedResources,
+    });
     if (!timedOut && !yieldedOneShotCleanupDeferred) {
       await unsubscribeCodexThreadBestEffort(client, {
         threadId: thread.threadId,
@@ -3954,6 +3954,20 @@ function resolveCodexDynamicToolDirectNames(params: EmbeddedRunAttemptParams): s
   return names;
 }
 
+function deferCodexYieldedOneShotCleanup(params: {
+  timedOut: boolean;
+  cleanupBundleMcpOnRunEnd: boolean;
+  yieldDetected: boolean;
+  monitor?: Pick<ReturnType<typeof registerCodexNativeSubagentMonitor>, "deferUntilParentSettles">;
+  parentThreadId: string;
+  cleanup: () => Promise<void> | void;
+}): boolean {
+  if (params.timedOut || !params.cleanupBundleMcpOnRunEnd || !params.yieldDetected) {
+    return false;
+  }
+  return params.monitor?.deferUntilParentSettles(params.parentThreadId, params.cleanup) ?? false;
+}
+
 export const testing = {
   buildCodexNativeHookRelayId,
   buildDeveloperInstructions,
@@ -3968,6 +3982,7 @@ export const testing = {
   shouldEnableCodexAppServerNativeToolSurface,
   shouldForceMessageTool,
   resolveCodexDynamicToolDirectNames,
+  deferCodexYieldedOneShotCleanup,
   hasPendingDynamicToolTerminalDiagnostic,
   toTranscriptToolResultForTests: toTranscriptToolResult,
   withCodexStartupTimeout,
