@@ -175,26 +175,14 @@ describe("runCodexAppServerAttempt native hook relay", () => {
     ).resolves.toMatchObject({ exitCode: 0 });
 
     await harness.notify({
-      method: "rawResponseItem/completed",
+      method: "turn/completed",
       params: {
-        threadId: "thread-1",
-        item: {
-          type: "message",
-          role: "assistant",
-          phase: "commentary",
-          content: [
-            {
-              type: "output_text",
-              text: JSON.stringify({
-                author: "child-thread",
-                recipient: "/root",
-                other_recipients: [],
-                content:
-                  '<subagent_notification>{"agent_path":"child-thread","status":{"completed":"done"}}</subagent_notification>',
-                trigger_turn: false,
-              }),
-            },
-          ],
+        threadId: "child-thread",
+        turn: {
+          id: "child-turn",
+          status: "interrupted",
+          items: [],
+          error: null,
         },
       },
     });
