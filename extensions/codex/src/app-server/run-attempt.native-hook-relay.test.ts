@@ -14,6 +14,11 @@ import { describe, expect, it, vi } from "vitest";
 import * as approvalBridge from "./approval-bridge.js";
 import { CodexAppServerRpcError } from "./client.js";
 import {
+  createCodexNativeHookRelay,
+  scheduleCodexNativeHookRelayUnregister,
+} from "./native-hook-relay.js";
+import { registerCodexNativeSubagentMonitor } from "./native-subagent-monitor.js";
+import {
   createParams,
   createResumeHarness,
   createStartedThreadHarness,
@@ -88,6 +93,99 @@ describe("runCodexAppServerAttempt native hook relay", () => {
     expect(nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relayId)).toBeDefined();
     testing.flushPendingCodexNativeHookRelayUnregistersForTests();
     expect(nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relayId)).toBeUndefined();
+  });
+
+  it("retains the native hook relay until yielded native children settle", async () => {
+    const harness = createStartedThreadHarness();
+    const monitor = registerCodexNativeSubagentMonitor({
+      client: harness.client,
+      parentThreadId: "parent-thread",
+    });
+    const relay = createCodexNativeHookRelay({
+      options: { enabled: true },
+      events: ["pre_tool_use"],
+      agentId: "main",
+      sessionId: "session-1",
+      sessionKey: "agent:main:session-1",
+      config: undefined,
+      runId: "run-1",
+      attemptTimeoutMs: 5_000,
+      startupTimeoutMs: 5_000,
+      turnStartTimeoutMs: 5_000,
+      signal: new AbortController().signal,
+      onPreToolUseFailure: () => undefined,
+    });
+    expect(relay).toBeDefined();
+    if (!relay) {
+      throw new Error("expected native hook relay registration");
+    }
+    await harness.notify({
+      method: "thread/started",
+      params: {
+        thread: {
+          id: "child-thread",
+          source: {
+            subAgent: {
+              thread_spawn: {
+                parent_thread_id: "parent-thread",
+                depth: 1,
+                agent_path: "child-thread",
+              },
+            },
+          },
+        },
+      },
+    });
+    const cleanup = vi.fn(() => scheduleCodexNativeHookRelayUnregister({ relay }));
+    expect(
+      testing.deferCodexYieldedOneShotCleanup({
+        timedOut: false,
+        cleanupBundleMcpOnRunEnd: true,
+        yieldDetected: true,
+        monitor,
+        parentThreadId: "parent-thread",
+        cleanup,
+      }),
+    ).toBe(true);
+    expect(cleanup).not.toHaveBeenCalled();
+
+    // Flushing the normal post-turn grace simulates a child that outlives the
+    // default 15-second unregister window. Its inherited hook must still work.
+    testing.flushPendingCodexNativeHookRelayUnregistersForTests();
+    expect(
+      nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relay.relayId),
+    ).toBeDefined();
+    await expect(
+      invokeNativeHookRelay({
+        provider: "codex",
+        relayId: relay.relayId,
+        event: "pre_tool_use",
+        rawPayload: {
+          hook_event_name: "PreToolUse",
+          agent_id: "child-thread",
+          tool_name: "Bash",
+          tool_input: { command: "pnpm test:extension codex" },
+        },
+      }),
+    ).resolves.toMatchObject({ exitCode: 0 });
+
+    await harness.notify({
+      method: "turn/completed",
+      params: {
+        threadId: "child-thread",
+        turn: {
+          id: "child-turn",
+          status: "interrupted",
+          items: [],
+          error: null,
+        },
+      },
+    });
+    expect(cleanup).toHaveBeenCalledOnce();
+    testing.flushPendingCodexNativeHookRelayUnregistersForTests();
+    expect(
+      nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relay.relayId),
+    ).toBeUndefined();
   });
 
   it("forwards command approval requests through the active native hook relay", async () => {
