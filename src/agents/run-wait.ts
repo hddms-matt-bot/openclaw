@@ -3,6 +3,7 @@
  * Normalizes run wait responses, reads the latest assistant reply, and drains
  * pending run sets for tools that need synchronous completion semantics.
  */
+import { setTimeout as delay } from "node:timers/promises";
 import {
   addTimerTimeoutGraceMs,
   asDateTimestampMs,
@@ -26,6 +27,8 @@ import {
 import { extractAssistantText, stripToolMessages } from "./tools/chat-history-text.js";
 
 type GatewayCaller = typeof callGateway;
+
+const AGENT_RUN_WAIT_RETRY_DELAY_MS = 100;
 
 const defaultRunWaitDeps = {
   callGateway,
@@ -216,12 +219,36 @@ export async function readLatestAssistantReply(params: {
   ).text;
 }
 
-/** Wait for one agent run through the gateway and normalize timeout/error states. */
-export async function waitForAgentRun(params: {
+/** True when a timeout result is a terminal run outcome, not an observation interval expiry. */
+export function isTerminalAgentWaitTimeout(wait: AgentWaitResult): boolean {
+  return (
+    wait.status === "timeout" &&
+    wait.pendingError !== true &&
+    (wait.endedAt !== undefined ||
+      Boolean(wait.stopReason || wait.livenessState) ||
+      buildAgentRunTerminalOutcomeFromWaitResult(wait)?.reason === "hard_timeout")
+  );
+}
+
+function shouldContinueAgentRunObservation(wait: AgentWaitResult): boolean {
+  return (
+    wait.status === "pending" ||
+    (wait.status === "timeout" &&
+      wait.timeoutPhase !== "gateway_draining" &&
+      !isTerminalAgentWaitTimeout(wait) &&
+      (wait.pendingError === true || !wait.error))
+  );
+}
+
+type WaitForAgentRunParams = {
   runId: string;
   timeoutMs: number;
   callGateway?: GatewayCaller;
-}): Promise<AgentWaitResult> {
+  signal?: AbortSignal;
+  untilTerminal?: true;
+};
+
+async function waitForAgentRunOnce(params: WaitForAgentRunParams): Promise<AgentWaitResult> {
   const timeoutMs = resolveRunWaitTimeoutMs(params.timeoutMs);
   try {
     const wait = await (params.callGateway ?? runWaitDeps.callGateway)({
@@ -231,6 +258,7 @@ export async function waitForAgentRun(params: {
         timeoutMs,
       },
       timeoutMs: addTimerTimeoutGraceMs(timeoutMs, 2_000),
+      ...(params.signal ? { signal: params.signal } : {}),
     });
     if (wait?.status === "timeout") {
       return normalizeAgentWaitResult("timeout", wait);
@@ -248,6 +276,24 @@ export async function waitForAgentRun(params: {
       status: error.includes("gateway timeout") ? "timeout" : "error",
       error,
     };
+  }
+}
+
+/** Wait for one agent run through the gateway and normalize timeout/error states. */
+export async function waitForAgentRun(params: WaitForAgentRunParams): Promise<AgentWaitResult> {
+  for (;;) {
+    params.signal?.throwIfAborted();
+    const wait = await waitForAgentRunOnce(params);
+    params.signal?.throwIfAborted();
+    if (!params.untilTerminal || !shouldContinueAgentRunObservation(wait)) {
+      return wait;
+    }
+    // Pending snapshots may return immediately. Retain ownership of the
+    // accepted run without spinning or changing its execution timeout.
+    await delay(AGENT_RUN_WAIT_RETRY_DELAY_MS, undefined, {
+      signal: params.signal,
+      ref: false,
+    });
   }
 }
 

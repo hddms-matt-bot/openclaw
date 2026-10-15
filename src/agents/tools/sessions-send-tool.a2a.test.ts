@@ -16,9 +16,11 @@ vi.mock("../../gateway/call.js", () => ({
 }));
 
 vi.mock("../run-wait.js", async (importOriginal) => {
-  const { isRecoverableAgentWaitError } = await importOriginal<typeof import("../run-wait.js")>();
+  const { isRecoverableAgentWaitError, isTerminalAgentWaitTimeout } =
+    await importOriginal<typeof import("../run-wait.js")>();
   return {
     isRecoverableAgentWaitError,
+    isTerminalAgentWaitTimeout,
     waitForAgentRun: vi.fn().mockResolvedValue({ status: "ok" }),
     readLatestAssistantReplySnapshot: vi.fn().mockResolvedValue({
       text: "Test announce reply",
@@ -345,10 +347,9 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
 
   it("notifies the requester when delayed target delivery fails after acceptance", async () => {
     vi.mocked(waitForAgentRun).mockResolvedValueOnce({
-      status: "timeout",
+      status: "error",
       error:
         "SessionWriteLockTimeoutError: session file locked (timeout 60000ms): pid=43 alive=true",
-      pendingError: true,
     });
 
     await runSessionsSendA2AFlow({
@@ -380,6 +381,34 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
     expect(gatewayCalls.find((call) => call.method === "send")).toBeUndefined();
   });
 
+  it("notifies the requester when delayed target delivery reaches a hard timeout", async () => {
+    vi.mocked(waitForAgentRun).mockResolvedValueOnce({
+      status: "timeout",
+      error: "model timed out",
+      timeoutPhase: "provider",
+      providerStarted: true,
+    });
+
+    await runSessionsSendA2AFlow({
+      targetSessionKey: "agent:worker:discord:group:dev",
+      displayKey: "agent:worker:discord:group:dev",
+      message: "Test message",
+      announceTimeoutMs: 10_000,
+      maxPingPongTurns: 2,
+      requesterSessionKey: "agent:main:discord:group:req",
+      requesterChannel: "discord",
+      notifyRequesterOnWaitFailure: true,
+      waitRunId: "run-hard-timeout",
+    });
+
+    expect(readLatestAssistantReplySnapshot).not.toHaveBeenCalled();
+    expect(runAgentStep).toHaveBeenCalledOnce();
+    const stepInput = firstMockArg(vi.mocked(runAgentStep), "agent step");
+    expect(stepInput.message).toContain("sessions_send delivery to");
+    expect(stepInput.message).toContain("model timed out");
+    expect(gatewayCalls.find((call) => call.method === "send")).toBeUndefined();
+  });
+
   it("does not notify the requester for waited sends that already returned the error inline", async () => {
     vi.mocked(waitForAgentRun).mockResolvedValueOnce({
       status: "timeout",
@@ -404,11 +433,9 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
     expect(gatewayCalls.find((call) => call.method === "send")).toBeUndefined();
   });
 
-  it("keeps ordinary delayed target timeouts silent", async () => {
+  it("retains terminal observation after an ordinary delayed target timeout", async () => {
     vi.mocked(waitForAgentRun).mockResolvedValueOnce({
       status: "timeout",
-      timeoutPhase: "provider",
-      providerStarted: true,
     });
 
     await runSessionsSendA2AFlow({
@@ -423,6 +450,10 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
       waitRunId: "run-still-working",
     });
 
+    expect(firstMockArg(vi.mocked(waitForAgentRun), "agent run wait")).toMatchObject({
+      runId: "run-still-working",
+      untilTerminal: true,
+    });
     expect(readLatestAssistantReplySnapshot).not.toHaveBeenCalled();
     expect(runAgentStep).not.toHaveBeenCalled();
     expect(gatewayCalls.find((call) => call.method === "send")).toBeUndefined();

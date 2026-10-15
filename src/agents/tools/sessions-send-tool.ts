@@ -39,6 +39,7 @@ import {
 import { resolveNestedAgentLaneForSession } from "../lanes.js";
 import {
   type AgentWaitResult,
+  isTerminalAgentWaitTimeout,
   readLatestAssistantReplySnapshot,
   waitForAgentRunAndReadUpdatedAssistantReply,
 } from "../run-wait.js";
@@ -189,10 +190,6 @@ function isRequesterParentOfNativeSubagentSession(params: {
   const spawnedBy = normalizeOptionalString(params.entry.spawnedBy);
   const parentSessionKey = normalizeOptionalString(params.entry.parentSessionKey);
   return requester === spawnedBy || requester === parentSessionKey;
-}
-
-function isTerminalAgentWaitTimeout(result: AgentWaitResult): boolean {
-  return result.endedAt !== undefined || Boolean(result.stopReason || result.livenessState);
 }
 
 function isPendingErrorAgentWaitTimeout(result: AgentWaitResult): boolean {

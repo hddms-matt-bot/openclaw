@@ -76,7 +76,7 @@ function expectAgentWaitRequest(
 
 describe("readLatestAssistantReply", () => {
   beforeEach(() => {
-    callGatewayMock.mockClear();
+    callGatewayMock.mockReset();
     testing.setDepsForTest({
       callGateway: async (opts) => await callGatewayMock(opts),
     });
@@ -194,7 +194,7 @@ describe("readLatestAssistantReply", () => {
 
 describe("waitForAgentRun", () => {
   beforeEach(() => {
-    callGatewayMock.mockClear();
+    callGatewayMock.mockReset();
     testing.setDepsForTest({
       callGateway: async (opts) => await callGatewayMock(opts),
     });
@@ -245,6 +245,79 @@ describe("waitForAgentRun", () => {
       error: "429 RESOURCE_EXHAUSTED",
       pendingError: true,
     });
+  });
+
+  it.each([
+    {
+      name: "one ordinary wait timeout",
+      waits: [{ status: "timeout" }],
+    },
+    {
+      name: "successive ordinary wait timeouts",
+      waits: [{ status: "timeout" }, { status: "timeout" }],
+    },
+    {
+      name: "queued execution",
+      waits: [{ status: "pending" }, { status: "timeout", timeoutPhase: "queue" }],
+    },
+    {
+      name: "provider retry grace",
+      waits: [{ status: "timeout", pendingError: true, error: "retrying provider" }],
+    },
+  ])("keeps observing an accepted run after $name", async ({ waits }) => {
+    for (const wait of waits) {
+      callGatewayMock.mockResolvedValueOnce(wait);
+    }
+    callGatewayMock.mockResolvedValueOnce({
+      status: "ok",
+      startedAt: 100,
+      endedAt: 200,
+    });
+
+    const result = await waitForAgentRun({
+      runId: "run-eventual-terminal",
+      timeoutMs: 500,
+      untilTerminal: true,
+    });
+
+    expect(result).toEqual({
+      status: "ok",
+      startedAt: 100,
+      endedAt: 200,
+    });
+    expect(callGatewayMock).toHaveBeenCalledTimes(waits.length + 1);
+    for (const request of gatewayWaitRequests()) {
+      expect(request.params?.runId).toBe("run-eventual-terminal");
+    }
+  });
+
+  it.each([
+    {
+      name: "hard provider timeout",
+      terminal: {
+        status: "timeout",
+        timeoutPhase: "provider",
+        providerStarted: true,
+      },
+    },
+    {
+      name: "gateway drain",
+      terminal: {
+        status: "timeout",
+        timeoutPhase: "gateway_draining",
+      },
+    },
+  ])("stops terminal observation on $name", async ({ terminal }) => {
+    callGatewayMock.mockResolvedValueOnce(terminal).mockResolvedValueOnce({ status: "ok" });
+
+    const result = await waitForAgentRun({
+      runId: "run-terminal-timeout",
+      timeoutMs: 500,
+      untilTerminal: true,
+    });
+
+    expect(result).toMatchObject(terminal);
+    expect(callGatewayMock).toHaveBeenCalledOnce();
   });
 
   it("normalizes wait timeouts before sending agent.wait", async () => {
@@ -380,7 +453,7 @@ describe("waitForAgentRun", () => {
 
 describe("waitForAgentRunAndReadUpdatedAssistantReply", () => {
   beforeEach(() => {
-    callGatewayMock.mockClear();
+    callGatewayMock.mockReset();
     testing.setDepsForTest({
       callGateway: async (opts) => await callGatewayMock(opts),
     });
@@ -450,7 +523,7 @@ describe("waitForAgentRunAndReadUpdatedAssistantReply", () => {
 
 describe("waitForAgentRunsToDrain", () => {
   beforeEach(() => {
-    callGatewayMock.mockClear();
+    callGatewayMock.mockReset();
     testing.setDepsForTest({
       callGateway: async (opts) => await callGatewayMock(opts),
     });
