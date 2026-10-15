@@ -65,6 +65,8 @@ If you need the exact byte-for-byte transcript, inspect the transcript file on d
 - **Fire-and-forget:** set `timeoutSeconds: 0` to enqueue and return immediately.
 - **Wait for reply:** set a timeout and get the response inline.
 
+If the inline wait expires after the target run was accepted, the pending announcement keeps observing that same run until it finishes; the wait interval does not discard a late reply. This continuation is process-local: a Gateway restart or drain can still interrupt it.
+
 Thread-scoped chat sessions, such as keys ending in `:thread:<id>`, are not valid `sessions_send` targets. Use the parent channel session key for inter-agent coordination so tool-routed messages do not appear inside an active human-facing thread.
 
 Messages and A2A follow-up replies are marked as inter-session data in the receiving prompt (`[Inter-session message ... isUser=false]`) and in transcript provenance. The receiving agent should treat them as tool-routed data, not as a direct end-user-authored instruction.

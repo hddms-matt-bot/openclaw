@@ -13,6 +13,7 @@ import {
   type AgentWaitResult,
   type AssistantReplySnapshot,
   isRecoverableAgentWaitError,
+  isTerminalAgentWaitTimeout,
   readLatestAssistantReplySnapshot,
   waitForAgentRun,
 } from "../run-wait.js";
@@ -45,7 +46,7 @@ let sessionsSendA2ADeps: {
 function isDeliveryFailureWait(wait: AgentWaitResult): boolean {
   return (
     (wait.status === "error" && !isRecoverableAgentWaitError(wait.error)) ||
-    (wait.status === "timeout" && wait.pendingError === true)
+    isTerminalAgentWaitTimeout(wait)
   );
 }
 
@@ -103,6 +104,7 @@ export async function runSessionsSendA2AFlow(params: {
         runId: params.waitRunId,
         timeoutMs: Math.min(params.announceTimeoutMs, 60_000),
         callGateway: sessionsSendA2ADeps.callGateway,
+        untilTerminal: true,
       });
       if (wait.status === "ok") {
         const latestSnapshot = await readLatestAssistantReplySnapshot({

@@ -1968,8 +1968,8 @@ describe("sessions tools", () => {
         return {
           runId: "run-terminal",
           status: "timeout",
-          endedAt: 3000,
-          stopReason: "timeout",
+          timeoutPhase: "provider",
+          providerStarted: true,
           error: "agent run timed out",
         };
       }
