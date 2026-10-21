@@ -249,7 +249,7 @@ function resolveCodexForwardCompatModel(ctx: ProviderResolveDynamicModelContext)
         ? model.contextTokens
         : undefined;
     return normalizeModelCompat({
-      ...(model ?? {}),
+      ...model,
       id: trimmedModelId,
       name: model?.name ?? "GPT-6.1 Sol",
       api: "openai-chatgpt-responses",
