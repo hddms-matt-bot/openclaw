@@ -279,7 +279,6 @@ function resolveCodexForwardCompatModel(ctx: ProviderResolveDynamicModelContext)
           "max",
         ],
         supportsTemperature: false,
-        codeMode: "preferred",
       },
     } as ProviderRuntimeModel);
   }

@@ -436,7 +436,7 @@ function buildOpenAICodexModelFromLiveRow(row: unknown): ModelDefinitionConfig |
           supportsReasoningEffort: true,
           supportedReasoningEfforts: [...reasoningLevels],
           ...(normalizeLowercaseStringOrEmpty(modelId) === OPENAI_GPT_61_SOL_MODEL_ID
-            ? { supportsTemperature: false, codeMode: "preferred" as const }
+            ? { supportsTemperature: false }
             : {}),
         }
       : fallback?.compat;
@@ -700,7 +700,6 @@ function resolveOpenAIGptForwardCompatModel(ctx: ProviderResolveDynamicModelCont
         supportsReasoningEffort: true,
         supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
         supportsTemperature: false,
-        codeMode: "preferred",
       },
     };
   } else if (
