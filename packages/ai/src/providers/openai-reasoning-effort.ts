@@ -33,6 +33,7 @@ const GPT_5_REASONING_EFFORTS = ["minimal", "low", "medium", "high"] as const;
 const GPT_51_REASONING_EFFORTS = ["none", "low", "medium", "high"] as const;
 const GPT_52_REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"] as const;
 const GPT_56_REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
+const GPT_61_SOL_REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 const GPT_CODEX_REASONING_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 const GPT_PRO_REASONING_EFFORTS = ["medium", "high", "xhigh"] as const;
 const GPT_5_PRO_REASONING_EFFORTS = ["high"] as const;
@@ -100,6 +101,9 @@ export function resolveOpenAISupportedReasoningEfforts(
   }
 
   const id = normalizeModelId(typeof model.id === "string" ? model.id : undefined);
+  if (id === "gpt-6.1-sol") {
+    return GPT_61_SOL_REASONING_EFFORTS;
+  }
   if (/^gpt-5\.6(?:-|$)/u.test(id)) {
     return GPT_56_REASONING_EFFORTS;
   }

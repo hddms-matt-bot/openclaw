@@ -467,6 +467,7 @@ against that bundled app-server returned these public picker rows:
 
 | Model id        | Input modalities | Reasoning efforts                    |
 | --------------- | ---------------- | ------------------------------------ |
+| `gpt-6.1-sol`   | text, image      | low, medium, high, xhigh, max        |
 | `gpt-5.6-sol`   | text, image      | low, medium, high, xhigh, max, ultra |
 | `gpt-5.6-terra` | text, image      | low, medium, high, xhigh, max, ultra |
 | `gpt-5.6-luna`  | text, image      | low, medium, high, xhigh, max        |

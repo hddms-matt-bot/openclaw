@@ -706,6 +706,45 @@ describe("buildOpenAIProvider", () => {
     ).not.toContainEqual({ id: "ultra" });
   });
 
+  it("preserves GPT-6.1 Sol subscription capabilities from live discovery", async () => {
+    const fetchGuard: LiveModelCatalogFetchGuard = vi.fn(async () => ({
+      response: Response.json({
+        models: [
+          {
+            slug: "gpt-6.1-sol",
+            display_name: "GPT-6.1 Sol",
+            visibility: "list",
+            supported_reasoning_levels: ["low", "medium", "high", "xhigh", "max"],
+            input_modalities: ["text", "image"],
+            context_window: 500_000,
+            max_context_window: 1_050_000,
+            max_output_tokens: 128_000,
+          },
+        ],
+      }),
+      finalUrl: "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0",
+      release: async () => undefined,
+    }));
+
+    const provider = await buildOpenAICodexLiveProviderConfig({
+      discoveryApiKey: "gpt-6.1-sol-oauth-token",
+      fetchGuard,
+    });
+    const sol = provider.models.find((model) => model.id === "gpt-6.1-sol");
+
+    expect(sol).toMatchObject({
+      input: ["text", "image"],
+      contextWindow: 1_050_000,
+      contextTokens: 500_000,
+      maxTokens: 128_000,
+      thinkingLevelMap: { off: null, xhigh: "xhigh", max: "max" },
+      compat: {
+        supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+        supportsTemperature: false,
+      },
+    });
+  });
+
   it.each([
     ["fails", () => new Response("temporarily unavailable", { status: 503 })],
     ["returns no models", () => Response.json({ models: [] })],
@@ -791,7 +830,7 @@ describe("buildOpenAIProvider", () => {
     expect(provider.hookAliases).toEqual(["azure-openai", "azure-openai-responses"]);
   });
 
-  it.each(["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])(
+  it.each(["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6.1-sol"])(
     "prefers auth-aware Codex runtime metadata for %s over static OpenAI catalog rows",
     (modelId) => {
       const provider = buildOpenAIProvider();
@@ -1032,6 +1071,42 @@ describe("buildOpenAIProvider", () => {
       baseUrl: "https://chatgpt.com/backend-api/codex",
       contextWindow: 1_050_000,
       maxTokens: 128_000,
+    });
+  });
+
+  it("routes GPT-6.1 Sol with direct and subscription-specific context budgets", () => {
+    const provider = buildOpenAIProvider();
+    const modelRegistry = { find: () => null } as never;
+    const direct = provider.resolveDynamicModel?.({
+      provider: "openai",
+      modelId: "gpt-6.1-sol",
+      modelRegistry,
+      providerConfig: { auth: "api-key" },
+    } as never);
+    const subscription = provider.resolveDynamicModel?.({
+      provider: "openai",
+      modelId: "gpt-6.1-sol",
+      modelRegistry,
+      agentRuntimeId: "codex",
+    } as never);
+
+    expectFields(direct, {
+      provider: "openai",
+      id: "gpt-6.1-sol",
+      api: "openai-responses",
+      contextWindow: 1_050_000,
+      contextTokens: 1_050_000,
+      maxTokens: 128_000,
+      thinkingLevelMap: { off: null, minimal: "low", xhigh: "xhigh", max: "max" },
+    });
+    expectFields(subscription, {
+      provider: "openai",
+      id: "gpt-6.1-sol",
+      api: "openai-chatgpt-responses",
+      contextWindow: 1_050_000,
+      contextTokens: 500_000,
+      maxTokens: 128_000,
+      thinkingLevelMap: { off: null, minimal: "low", xhigh: "xhigh", max: "max" },
     });
   });
 
@@ -1340,12 +1415,40 @@ describe("buildOpenAIProvider", () => {
         supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
       },
     } as never);
+    const openClawGpt61Sol = provider.resolveThinkingProfile?.({
+      provider: "openai",
+      modelId: "gpt-6.1-sol",
+      agentRuntime: "openclaw",
+    } as never);
+    const codexGpt61Sol = provider.resolveThinkingProfile?.({
+      provider: "openai",
+      modelId: "gpt-6.1-sol",
+      agentRuntime: "codex",
+      compat: {
+        supportedReasoningEfforts: ["low", "high", "ultra"],
+      },
+    } as never);
 
     expect(openClawLuna?.levels.map((level) => level.id)).toContain("ultra");
     expect(codexLuna?.levels.map((level) => level.id)).not.toContain("ultra");
     expect(codexLuna?.levels.map((level) => level.id)).toContain("max");
     expect(codexSolFromDirectCatalog?.levels.map((level) => level.id)).toContain("ultra");
     expect(codexSolFromNativeCatalog?.levels.map((level) => level.id)).toContain("ultra");
+    expect(openClawGpt61Sol).toEqual({
+      levels: [
+        { id: "low" },
+        { id: "medium" },
+        { id: "high" },
+        { id: "xhigh" },
+        { id: "max" },
+        { id: "ultra" },
+      ],
+      defaultLevel: "medium",
+    });
+    expect(codexGpt61Sol).toEqual({
+      levels: [{ id: "low" }, { id: "high" }, { id: "ultra" }],
+      defaultLevel: "low",
+    });
   });
 
   it("keeps chat-latest and gpt-5.5 out of synthetic catalog metadata", () => {
