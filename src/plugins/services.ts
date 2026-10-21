@@ -36,9 +36,9 @@ function createServiceContext(params: {
   const grantsInternalDiagnostics =
     isDiagnosticsExporter &&
     (params.service?.origin === "bundled" || params.service?.trustedOfficialInstall === true);
-  const grantsHddmsMetadataDiagnostics =
-    params.service?.pluginId === "hddms-performance" &&
-    params.service?.service.id === "hddms-performance" &&
+  const grantsTeamryMetadataDiagnostics =
+    params.service?.pluginId === "teamry-performance" &&
+    params.service?.service.id === "teamry-performance" &&
     params.service?.origin === "global";
 
   return {
@@ -62,7 +62,7 @@ function createServiceContext(params: {
           },
         }
       : {}),
-    ...(grantsHddmsMetadataDiagnostics
+    ...(grantsTeamryMetadataDiagnostics
       ? {
           internalDiagnosticEvents: {
             onEvent: onInternalDiagnosticEvent,
