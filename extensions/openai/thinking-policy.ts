@@ -14,6 +14,12 @@ const OPENAI_THINKING_BASE_LEVELS = [
   { id: "high" },
 ] as const satisfies ProviderThinkingProfile["levels"];
 
+const OPENAI_MANDATORY_REASONING_LEVELS = [
+  { id: "low" },
+  { id: "medium" },
+  { id: "high" },
+] as const satisfies ProviderThinkingProfile["levels"];
+
 const OPENAI_THINKING_LEVEL_ORDER = [
   "off",
   "minimal",
@@ -63,10 +69,11 @@ function normalizeCodexReasoningEffort(value: string): OpenAIThinkingLevelId | u
 
 function buildAuthoritativeCodexLevels(
   efforts: readonly string[],
+  options: { includeOff?: boolean } = {},
 ): ProviderThinkingProfile["levels"] {
   // Omitting an effort remains a valid Codex choice even when model/list has
   // no reasoning presets. Every other picker stop must come from that list.
-  const supported = new Set<OpenAIThinkingLevelId>(["off"]);
+  const supported = new Set<OpenAIThinkingLevelId>(options.includeOff === false ? [] : ["off"]);
   for (const effort of efforts) {
     const level = normalizeCodexReasoningEffort(effort);
     if (level) {
@@ -88,15 +95,16 @@ function buildOpenAIThinkingProfile(params: {
   const isSol = modelId === "gpt-5.6-sol";
   const isTerra = modelId === "gpt-5.6-terra";
   const isLuna = modelId === "gpt-5.6-luna";
+  const isGpt61Sol = modelId === "gpt-6.1-sol";
   const codexEfforts = params.compat?.supportedReasoningEfforts?.map(normalizeModelId);
   const hasDirectOpenAICompat = codexEfforts?.includes("none") === true;
   const authoritativeCodexEfforts = hasDirectOpenAICompat ? undefined : codexEfforts;
-  const fallbackCodexMax = isSol || isTerra || isLuna;
+  const fallbackCodexMax = isSol || isTerra || isLuna || isGpt61Sol;
   const codexSupportsMax = authoritativeCodexEfforts
     ? authoritativeCodexEfforts.includes("max")
     : fallbackCodexMax;
   const supportsMax =
-    modelId.startsWith("gpt-5.6") && (agentRuntime !== "codex" || codexSupportsMax);
+    (modelId.startsWith("gpt-5.6") || isGpt61Sol) && (agentRuntime !== "codex" || codexSupportsMax);
   const fallbackCodexUltra = isSol || isTerra;
   const codexSupportsUltra = authoritativeCodexEfforts
     ? authoritativeCodexEfforts.includes("ultra")
@@ -104,13 +112,20 @@ function buildOpenAIThinkingProfile(params: {
   // OpenClaw owns its logical Ultra orchestration. Native Codex owns its Ultra
   // catalog; direct API metadata must not erase the known native fallback.
   const supportsUltra =
-    (isBare || isSol || isTerra || isLuna) &&
+    (isBare || isSol || isTerra || isLuna || isGpt61Sol) &&
     (agentRuntime === "openclaw" ||
       agentRuntime === "auto" ||
       (agentRuntime === "codex" && codexSupportsUltra));
-  const defaultLevel = isSol ? "low" : isTerra || isLuna ? "medium" : undefined;
+  const defaultLevel = isGpt61Sol
+    ? "medium"
+    : isSol
+      ? "low"
+      : isTerra || isLuna
+        ? "medium"
+        : undefined;
   const fallbackLevels: ProviderThinkingProfile["levels"] = [
-    ...OPENAI_THINKING_BASE_LEVELS,
+    ...(isGpt61Sol ? OPENAI_MANDATORY_REASONING_LEVELS : OPENAI_THINKING_BASE_LEVELS),
+    ...(isGpt61Sol ? [{ id: "xhigh" as const }] : []),
     ...(matchesExactOrPrefix(params.modelId, params.xhighModelIds)
       ? [{ id: "xhigh" as const }]
       : []),
@@ -119,12 +134,19 @@ function buildOpenAIThinkingProfile(params: {
   ];
   const levels =
     agentRuntime === "codex" && authoritativeCodexEfforts !== undefined
-      ? buildAuthoritativeCodexLevels(authoritativeCodexEfforts)
+      ? buildAuthoritativeCodexLevels(authoritativeCodexEfforts, {
+          includeOff: !isGpt61Sol,
+        })
       : fallbackLevels;
-  const supportedDefault = defaultLevel && levels.some((level) => level.id === defaultLevel);
+  const supportedDefault =
+    defaultLevel && levels.some((level) => level.id === defaultLevel)
+      ? defaultLevel
+      : isGpt61Sol && levels.some((level) => level.id === "low")
+        ? "low"
+        : undefined;
   return {
     levels,
-    ...(supportedDefault ? { defaultLevel } : {}),
+    ...(supportedDefault ? { defaultLevel: supportedDefault } : {}),
   };
 }
 

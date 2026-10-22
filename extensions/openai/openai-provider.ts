@@ -58,6 +58,7 @@ const OPENAI_GPT_56_MODEL_ID = "gpt-5.6";
 const OPENAI_GPT_56_SOL_MODEL_ID = "gpt-5.6-sol";
 const OPENAI_GPT_56_TERRA_MODEL_ID = "gpt-5.6-terra";
 const OPENAI_GPT_56_LUNA_MODEL_ID = "gpt-5.6-luna";
+const OPENAI_GPT_61_SOL_MODEL_ID = "gpt-6.1-sol";
 const OPENAI_GPT_55_MODEL_ID = "gpt-5.5";
 const OPENAI_GPT_55_PRO_MODEL_ID = "gpt-5.5-pro";
 const OPENAI_GPT_54_MODEL_ID = "gpt-5.4";
@@ -67,6 +68,8 @@ const OPENAI_GPT_54_NANO_MODEL_ID = "gpt-5.4-nano";
 const OPENAI_GPT_53_CODEX_SPARK_MODEL_ID = "gpt-5.3-codex-spark";
 const OPENAI_GPT_56_DIRECT_CONTEXT_TOKENS = 1_050_000;
 const OPENAI_CODEX_GPT_56_CONTEXT_TOKENS = 372_000;
+const OPENAI_GPT_61_SOL_DIRECT_CONTEXT_TOKENS = 1_050_000;
+const OPENAI_CODEX_GPT_61_SOL_CONTEXT_TOKENS = 500_000;
 const OPENAI_GPT_55_CONTEXT_WINDOW = 1_000_000;
 const OPENAI_GPT_55_CONTEXT_TOKENS = 272_000;
 const OPENAI_GPT_55_PRO_CONTEXT_TOKENS = 1_000_000;
@@ -93,6 +96,16 @@ const OPENAI_GPT_56_LUNA_COST = {
   output: 6,
   cacheRead: 0.1,
   cacheWrite: 1.25,
+} as const;
+const OPENAI_GPT_61_SOL_COST = {
+  input: 2,
+  output: 10,
+  cacheRead: 0.1,
+  cacheWrite: 2.5,
+  tieredPricing: [
+    { range: [0, 272_001], input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+    { range: [272_001], input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 },
+  ],
 } as const;
 const OPENAI_GPT_55_COST = { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 } as const;
 const OPENAI_GPT_55_PRO_COST = { input: 30, output: 180, cacheRead: 0, cacheWrite: 0 } as const;
@@ -126,8 +139,18 @@ const OPENAI_CHAT_LATEST_TEMPLATE_MODEL_IDS = [
   OPENAI_GPT_54_MODEL_ID,
 ] as const;
 const OPENAI_GPT_56_TEMPLATE_MODEL_IDS = [OPENAI_GPT_55_MODEL_ID] as const;
+const OPENAI_GPT_61_SOL_TEMPLATE_MODEL_IDS = [
+  OPENAI_GPT_56_SOL_MODEL_ID,
+  OPENAI_GPT_55_MODEL_ID,
+] as const;
 const OPENAI_GPT_56_THINKING_LEVEL_MAP = {
   off: "none",
+  xhigh: "xhigh",
+  max: "max",
+} as const;
+const OPENAI_GPT_61_SOL_THINKING_LEVEL_MAP = {
+  off: null,
+  minimal: "low",
   xhigh: "xhigh",
   max: "max",
 } as const;
@@ -137,6 +160,7 @@ const OPENAI_MODERN_MODEL_IDS = [
   OPENAI_GPT_56_SOL_MODEL_ID,
   OPENAI_GPT_56_TERRA_MODEL_ID,
   OPENAI_GPT_56_LUNA_MODEL_ID,
+  OPENAI_GPT_61_SOL_MODEL_ID,
   OPENAI_GPT_55_MODEL_ID,
   OPENAI_GPT_55_PRO_MODEL_ID,
   OPENAI_GPT_54_MODEL_ID,
@@ -329,6 +353,16 @@ function normalizeOpenAICodexCatalogModel(
   if (modelId === OPENAI_GPT_56_MODEL_ID) {
     return undefined;
   }
+  if (modelId === OPENAI_GPT_61_SOL_MODEL_ID) {
+    return {
+      ...model,
+      contextTokens: OPENAI_CODEX_GPT_61_SOL_CONTEXT_TOKENS,
+      thinkingLevelMap: {
+        ...model.thinkingLevelMap,
+        ...OPENAI_GPT_61_SOL_THINKING_LEVEL_MAP,
+      },
+    };
+  }
   if (
     modelId === OPENAI_GPT_56_SOL_MODEL_ID ||
     modelId === OPENAI_GPT_56_TERRA_MODEL_ID ||
@@ -401,11 +435,17 @@ function buildOpenAICodexModelFromLiveRow(row: unknown): ModelDefinitionConfig |
           ...fallback?.compat,
           supportsReasoningEffort: true,
           supportedReasoningEfforts: [...reasoningLevels],
+          ...(normalizeLowercaseStringOrEmpty(modelId) === OPENAI_GPT_61_SOL_MODEL_ID
+            ? { supportsTemperature: false }
+            : {}),
         }
       : fallback?.compat;
   const thinkingLevelMap = {
     ...(reasoningLevels === undefined ? fallback?.thinkingLevelMap : {}),
-    ...(normalizeLowercaseStringOrEmpty(modelId).startsWith("gpt-5.6") ? { off: null } : {}),
+    ...(fallback?.thinkingLevelMap?.off === null ||
+    normalizeLowercaseStringOrEmpty(modelId).startsWith("gpt-5.6")
+      ? { off: null }
+      : {}),
     ...(reasoningLevels?.includes("xhigh") ? { xhigh: "xhigh" as const } : {}),
     ...(reasoningLevels?.includes("max") ? { max: "max" as const } : {}),
   };
@@ -642,6 +682,25 @@ function resolveOpenAIGptForwardCompatModel(ctx: ProviderResolveDynamicModelCont
       cost: OPENAI_CHAT_LATEST_COST,
       contextWindow: 400_000,
       maxTokens: OPENAI_GPT_54_MAX_TOKENS,
+    };
+  } else if (lower === OPENAI_GPT_61_SOL_MODEL_ID) {
+    templateIds = OPENAI_GPT_61_SOL_TEMPLATE_MODEL_IDS;
+    patch = {
+      api: "openai-responses",
+      provider: PROVIDER_ID,
+      baseUrl: resolveOpenAIDefaultBaseUrl(),
+      reasoning: true,
+      input: ["text", "image"],
+      cost: OPENAI_GPT_61_SOL_COST,
+      contextWindow: OPENAI_GPT_61_SOL_DIRECT_CONTEXT_TOKENS,
+      contextTokens: OPENAI_GPT_61_SOL_DIRECT_CONTEXT_TOKENS,
+      maxTokens: OPENAI_GPT_54_MAX_TOKENS,
+      thinkingLevelMap: OPENAI_GPT_61_SOL_THINKING_LEVEL_MAP,
+      compat: {
+        supportsReasoningEffort: true,
+        supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+        supportsTemperature: false,
+      },
     };
   } else if (
     lower === OPENAI_GPT_56_MODEL_ID ||

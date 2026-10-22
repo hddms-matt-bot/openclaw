@@ -26,6 +26,21 @@ describe("OpenAI reasoning effort support", () => {
     expect(resolveOpenAIReasoningEffortForModel({ model: luna, effort: "off" })).toBe("none");
   });
 
+  it("keeps GPT-6.1 Sol reasoning mandatory", () => {
+    const model = { provider: "openai", id: "gpt-6.1-sol" };
+
+    expect(resolveOpenAISupportedReasoningEfforts(model)).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(resolveOpenAIReasoningEffortForModel({ model, effort: "off" })).toBeUndefined();
+    expect(resolveOpenAIReasoningEffortForModel({ model, effort: "minimal" })).toBe("low");
+    expect(resolveOpenAIReasoningEffortForModel({ model, effort: "max" })).toBe("max");
+  });
+
   it.each([
     { provider: "openai", id: "gpt-5.5" },
     { provider: "openai", id: "gpt-5.5" },

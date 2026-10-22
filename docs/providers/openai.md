@@ -46,6 +46,7 @@ changing config.
 
 | Goal                                              | Use                                                                | Notes                                                               |
 | ------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| GPT-6.1 Sol through ChatGPT/Codex                 | `openai/gpt-6.1-sol`                                               | 500K active context; reasoning stays enabled.                       |
 | ChatGPT/Codex subscription, native Codex runtime  | `openai/gpt-5.6-sol`                                               | Fresh subscription setup; sign in with Codex auth.                  |
 | Direct API-key billing for agent turns            | `openai/gpt-5.6` plus an ordered API-key auth profile              | Fresh API-key setup; the bare direct-API id resolves to Sol.        |
 | Choose an exact GPT-5.6 tier                      | `openai/gpt-5.6-sol`, `-terra`, or `-luna`                         | Check `models list` for the tiers available to this account.        |
@@ -76,6 +77,24 @@ selection, including `openai/gpt-5.5`, unless you explicitly use
 `models auth login --set-default` or `models set`. Use an API-key auth profile
 only when you want API-key auth for an agent model.
 </Note>
+
+## GPT-6.1 Sol
+
+OpenClaw recognizes `openai/gpt-6.1-sol` for both the native Codex runtime and
+the embedded OpenClaw runtime. ChatGPT/Codex subscriptions use a 500K active
+context budget; direct API-key routing uses the model's 1.05M context window.
+Both routes support text and image input, up to 128K output tokens, and the
+`low`, `medium`, `high`, `xhigh`, and `max` reasoning levels.
+
+GPT-6.1 Sol requires reasoning. `off` is unavailable, and `minimal` is raised
+to `low`. Check account access before selecting it:
+
+```bash
+openclaw models list --provider openai
+```
+
+Then add `openai/gpt-6.1-sol` to `agents.defaults.models` and select it for a
+test session before changing a shared alias or default.
 
 ## GPT-5.6 limited preview
 
@@ -309,6 +328,8 @@ for the full example.
 
     | Model ref                 | Runtime config                                      | Route                                                  | Auth                                               |
     | ------------------------- | --------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------- |
+    | `openai/gpt-6.1-sol`      | unset, or provider/model `agentRuntime.id: "codex"` | Native Codex app-server harness                        | Codex sign-in when the account catalog exposes it  |
+    | `openai/gpt-6.1-sol`      | provider/model `agentRuntime.id: "openclaw"`        | OpenClaw embedded runtime, internal Codex-auth transport | Selected `openai` OAuth profile                    |
     | `openai/gpt-5.6-sol`      | unset, or provider/model `agentRuntime.id: "codex"` | Native Codex app-server harness                        | Codex sign-in, or an ordered `openai` auth profile |
     | `openai/gpt-5.6-terra`    | unset, or provider/model `agentRuntime.id: "codex"` | Native Codex app-server harness                        | Codex sign-in when the catalog exposes Terra       |
     | `openai/gpt-5.6-luna`     | unset, or provider/model `agentRuntime.id: "codex"` | Native Codex app-server harness                        | Codex sign-in when the catalog exposes Luna        |
